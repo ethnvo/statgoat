@@ -133,26 +133,26 @@ function transformPlayerOddsData(oddsData) {
                 const playerName = outcome.description; // Player name
                 const bookmakerKey = bookmaker.key; // Bookmaker key (e.g., "underdog")
                 const bookmakerTitle = bookmaker.title; // Bookmaker title (e.g., "Underdog")
+                const outcomeType = outcome.name; // "Over" or "Under"
 
                 // Initialize player entry if it doesn't exist
                 if (!playerOdds[playerName]) {
                     playerOdds[playerName] = {};
                 }
 
-                // Initialize bookmaker entry for the player if it doesn't exist
-                if (!playerOdds[playerName][bookmakerKey]) {
-                    playerOdds[playerName][bookmakerKey] = {
-                        title: bookmakerTitle,
-                        outcomes: []
+                // Initialize over/under entry for the player if it doesn't exist
+                if (!playerOdds[playerName][outcomeType]) {
+                    playerOdds[playerName][outcomeType] = {
+                        point: outcome.point, // Point threshold (e.g., 27.5)
+                        books: {}
                     };
                 }
 
-                // Add the outcome to the player's bookmaker entry
-                playerOdds[playerName][bookmakerKey].outcomes.push({
-                    name: outcome.name, // "Over" or "Under"
-                    price: outcome.price, // Odds (e.g., -137)
-                    point: outcome.point // Point threshold (e.g., 27.5)
-                });
+                // Add the bookmaker odds to the over/under entry
+                playerOdds[playerName][outcomeType].books[bookmakerKey] = {
+                    title: bookmakerTitle,
+                    price: outcome.price // Odds (e.g., -137)
+                };
             });
         });
     });
