@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const Odds = require('../models/Odds');
+
 const {
   transformOddsData,
   findOddsDiscrepancies,
@@ -20,52 +22,105 @@ router.get('/', async (req, res, next) => {
       dateFormat = 'iso',
       eventId,
       bookmakers: rawBookmakers,
+      analyze = 'true' // New parameter to toggle discrepancy analysis
     } = req.query;
 
     // Handle "no parameters" case (list all sports)
     if (Object.keys(req.query).length === 0) {
-      const sportsUrl = `https://api.the-odds-api.com/v4/sports?apiKey=${API_KEY}`;
-      const response = await axios.get(sportsUrl);
-      logTokenUsage(response);
-      return res.json(response.data);
+      const sports = await Odds.distinct('sport');
+      return res.json(sports);
     }
 
     // Set bookmakers based on region
     const bookmakers = getBookmakersByRegion(region, rawBookmakers);
 
-    // Build API URL
-    const apiUrl = buildOddsApiUrl({
-      sport,
-      region,
-      markets,
-      oddsFormat,
-      dateFormat,
-      eventId,
-      bookmakers,
-      apiKey: API_KEY,
-    });
+    // First try to get data from database
+    let dbQuery = {};
+    if (sport && sport !== 'upcoming') dbQuery.sportKey = sport;
+    if (eventId) dbQuery.eventId = eventId;
 
-    console.log(`Request sent: ${apiUrl}`);
+    let oddsData = await Odds.find(dbQuery).lean();
 
-    // Fetch data
-    const response = await axios.get(apiUrl);
-    logTokenUsage(response);
+    // If no data in DB or data is stale (older than 5 minutes), fetch from API
+    if (oddsData.length === 0 || isDataStale(oddsData[0].lastFetched)) {
+      const apiUrl = buildOddsApiUrl({
+        sport,
+        region,
+        markets,
+        oddsFormat,
+        dateFormat,
+        eventId,
+        bookmakers,
+        apiKey: API_KEY,
+      });
 
-    // Transform data
-    let transformedData;
-    if (region === 'us' || region === 'us2') {
-      transformedData = transformOddsData(response.data);
-    } else if (region === 'us_dfs') {
-      transformedData = transformPlayerOddsData(response.data);
-    } else {
-      transformedData = response.data;
+      console.log(`Request sent: ${apiUrl}`);
+      const response = await axios.get(apiUrl);
+      logTokenUsage(response);
+
+      // Transform and store the data
+      let transformedData;
+      if (region === 'us' || region === 'us2') {
+        transformedData = transformOddsData(response.data);
+      } else if (region === 'us_dfs') {
+        transformedData = transformPlayerOddsData(response.data);
+      } else {
+        transformedData = response.data;
+      }
+
+      // Store in database
+      if (Array.isArray(transformedData)) {
+        for (const event of transformedData) {
+          await Odds.findOneAndUpdate(
+            { eventId: event.eventId },
+            event,
+            { upsert: true, new: true }
+          );
+        }
+        oddsData = transformedData;
+      } else {
+        await Odds.findOneAndUpdate(
+          { eventId: transformedData.eventId },
+          transformedData,
+          { upsert: true, new: true }
+        );
+        oddsData = [transformedData];
+      }
     }
 
-    res.json(transformedData);
+    // Apply additional filtering
+    if (bookmakers) {
+      const bookmakerList = bookmakers.split(',');
+      oddsData = oddsData.map(event => ({
+        ...event,
+        bookmakers: event.bookmakers.filter(bm => bookmakerList.includes(bm.key))
+      }));
+    }
+
+    // Add discrepancy analysis if enabled and applicable
+    if (analyze === 'true' && (region === 'us' || region === 'us2')) {
+      oddsData = oddsData.map(event => {
+        const discrepancies = findOddsDiscrepancies([event]);
+        return {
+          ...event,
+          analysis: {
+            discrepancies: discrepancies.length > 0 ? discrepancies[0].discrepancies : [],
+            timestamp: new Date().toISOString()
+          }
+        };
+      });
+    }
+
+    res.json(oddsData);
   } catch (err) {
     next(err);
   }
 });
+
+// Helper to check if data is stale (older than 5 minutes)
+function isDataStale(lastFetched) {
+  return (Date.now() - new Date(lastFetched).getTime()) > 5 * 60 * 1000;
+}
 
 // Helper: Log API token usage
 function logTokenUsage(response) {

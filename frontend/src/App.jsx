@@ -44,7 +44,7 @@ function App() {
 
   return (
     <div className="odds-container">
-      <h1>Sports Odds</h1>
+      <h1>StatGoat - Sports Odds</h1>
       
       {/* Filter Controls */}
       <div className="filters">
@@ -52,6 +52,11 @@ function App() {
           <option value="all">All Sports</option>
           <option value="basketball_nba">NBA</option>
           <option value="americanfootball_nfl">NFL</option>
+          <option value="americanfootball_ncaaf">NCAAF</option>
+          <option value="icehockey_nhl">NHL</option>
+          <option value="soccer_usa_mls">MLS</option>
+
+
           {/* Add more sports as needed */}
         </select>
         
@@ -60,6 +65,7 @@ function App() {
           <option value="draftkings">DraftKings</option>
           <option value="fanduel">FanDuel</option>
           <option value="betmgm">BetMgm</option>
+          <option value="mybookieag">MyBookie.ag</option>
 
         </select>
       </div>
